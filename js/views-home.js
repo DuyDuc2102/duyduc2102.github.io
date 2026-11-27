@@ -4,10 +4,12 @@
 function getQuickSourceQuestions(sourceKey) {
   const p1Set = state.sets.find((s) => s.id === 'builtin_triet_p1');
   const p2Set = state.sets.find((s) => s.id === 'builtin_triet_p2');
+  const s200Set = state.sets.find((s) => s.id === 'builtin_triet_s200');
   const bothSet = state.sets.find((s) => s.id === 'builtin_triet_both');
   const allPool = bothSet ? bothSet.questions : [];
   if (sourceKey === 'p1') return p1Set ? p1Set.questions : [];
   if (sourceKey === 'p2') return p2Set ? p2Set.questions : [];
+  if (sourceKey === 's200') return s200Set ? s200Set.questions : [];
   if (sourceKey === 'both') return allPool;
   if (sourceKey === 'wrong') {
     const wrongSet = new Set(state.wrongIds || []);
@@ -29,6 +31,7 @@ function renderHomeView(container) {
   const qc = state.quickConfig;
   const p1Qs = getQuickSourceQuestions('p1');
   const p2Qs = getQuickSourceQuestions('p2');
+  const s200Qs = getQuickSourceQuestions('s200');
   const bothQs = getQuickSourceQuestions('both');
   const wrongQs = getQuickSourceQuestions('wrong');
 
@@ -53,6 +56,7 @@ function renderHomeView(container) {
   const sourceLabels = {
     p1: 'Phần 1',
     p2: 'Phần 2',
+    s200: 'S200 (theo sách)',
     both: 'Tất cả',
     wrong: 'Câu đã sai'
   };
@@ -76,7 +80,8 @@ function renderHomeView(container) {
   const sourceCards = [
     { key: 'p1', title: 'Phần 1', desc: 'Bài tập hỏi đáp Phần 1', count: p1Qs.length },
     { key: 'p2', title: 'Phần 2', desc: 'Bài tập trắc nghiệm Phần 2', count: p2Qs.length },
-    { key: 'both', title: 'Tất cả', desc: 'Gộp toàn bộ các phần (đã lọc trùng)', count: bothQs.length },
+    { key: 's200', title: 'S200', desc: 'S200 câu (theo sách)', count: s200Qs.length },
+    { key: 'both', title: 'Tất cả', desc: 'Gộp toàn bộ (đã lọc trùng)', count: bothQs.length },
     { key: 'wrong', title: 'Câu đã sai', desc: 'Ôn lại câu từng làm sai', count: wrongQs.length }
   ];
 
@@ -85,7 +90,7 @@ function renderHomeView(container) {
       <!-- Tiêu đề gọn nhẹ -->
       <div class="pb-1">
         <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">Ôn tập trắc nghiệm Triết học Mác – Lênin</h1>
-        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1">${bothQs.length} câu hỏi · 2 bộ đề · đáp án lấy từ tài liệu ôn tập</p>
+        <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1">${bothQs.length} câu hỏi · 3 bộ đề · đáp án lấy từ tài liệu ôn tập</p>
       </div>
 
       <!-- BƯỚC 1: CHỌN BỘ CÂU HỎI -->
@@ -94,7 +99,7 @@ function renderHomeView(container) {
           <span class="w-5 h-5 rounded-md bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-[11px] font-semibold flex items-center justify-center text-neutral-600 dark:text-neutral-300">1</span>
           <h2 class="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Chọn bộ câu hỏi</h2>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5" id="qc-source-grid">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5" id="qc-source-grid">
           ${sourceCards.map((c) => {
             const selected = qc.source === c.key;
             const disabled = c.key === 'wrong' && c.count === 0;
@@ -377,6 +382,7 @@ function renderHomeView(container) {
     const setIdMap = {
       p1: 'builtin_triet_p1',
       p2: 'builtin_triet_p2',
+      s200: 'builtin_triet_s200',
       both: 'builtin_triet_both',
       wrong: 'builtin_triet_wrong'
     };

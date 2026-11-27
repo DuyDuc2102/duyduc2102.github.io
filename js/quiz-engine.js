@@ -7,7 +7,7 @@ function startQuizSession(setObj, opts) {
   const sourceQs = opts.customQuestions || setObj.questions;
   let prepared = sourceQs.map((q) => {
     const optPairs = q.options.map((text, idx) => ({ text, isCorrect: idx === q.correctIndex }));
-    const finalPairs = opts.shuffleA ? shuffleArray(optPairs) : optPairs;
+    const finalPairs = (opts.shuffleA && !q.keepOrder) ? shuffleArray(optPairs) : optPairs;
     return {
       id: q.id,
       question: q.question,
