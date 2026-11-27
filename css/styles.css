@@ -1,0 +1,113 @@
+/* Thiết lập chung và hiệu ứng mượt mà */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Hiệu ứng lật thẻ Flashcard 3D */
+.flashcard-scene {
+  perspective: 1200px;
+}
+.flashcard-inner {
+  position: relative;
+  width: 100%;
+  min-height: 320px;
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-style: preserve-3d;
+}
+.flashcard-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+.flashcard-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.flashcard-back {
+  transform: rotateY(180deg);
+}
+
+/* Thanh cuộn tinh gọn */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 9999px;
+}
+
+/* Tối ưu khi xuất PDF qua lệnh in trình duyệt */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+  #app-root, #toast-container, #modal-root, #custom-bg-layer {
+    display: none !important;
+  }
+  #print-area {
+    display: block !important;
+  }
+  .print-break-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+#print-area {
+  display: none;
+}
+
+/* Công tắc gạt tối giản trắng đen */
+.mono-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+  cursor: pointer;
+}
+.mono-switch-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  transition: transform 0.2s ease;
+}
+
+/* Lớp hình nền tùy chỉnh (ảnh hoặc video ngắn) */
+body.has-custom-bg {
+  background-color: transparent !important;
+}
+body.has-custom-bg.bg-glass-cards #main-content section,
+body.has-custom-bg.bg-glass-cards #main-content .bg-white,
+body.has-custom-bg.bg-glass-cards #main-content .dark\:bg-neutral-900,
+body.has-custom-bg.bg-glass-cards #main-content .dark\:bg-neutral-900\/90 {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+body.has-custom-bg.bg-glass-cards:not(.dark) #main-content section {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+}
+html.dark body.has-custom-bg.bg-glass-cards #main-content section {
+  background-color: rgba(23, 23, 23, 0.74) !important;
+}
+body.has-custom-bg header {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+body.has-custom-bg footer {
+  background-color: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+html.dark body.has-custom-bg footer {
+  background-color: rgba(10, 10, 10, 0.55);
+}
