@@ -550,7 +550,7 @@ function renderSetCard(setObj) {
   const bestScore = attempts > 0 ? Math.max(...setHistory.map((h) => h.score10)) : null;
 
   return `
-    <article class="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 flex flex-col justify-between shadow-xs hover:shadow-md transition">
+    <article data-set-card="${escapeHtml(setObj.id)}" class="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 flex flex-col justify-between shadow-xs hover:shadow-md transition">
       <div>
         <div class="flex items-start justify-between gap-2 mb-2.5">
           <div class="flex flex-wrap gap-1.5">

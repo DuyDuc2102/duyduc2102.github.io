@@ -311,13 +311,20 @@ function openMergeModal() {
     for (const id of checkedIds) {
       const found = state.sets.find((s) => s.id === id);
       if (!found) continue;
-      for (const q of found.questions) {
-        const key = q.question.trim().toLowerCase();
-        if (!seenText.has(key)) {
-          seenText.add(key);
-          mergedQuestions.push(Object.assign({}, q, { id: generateId('q'), options: q.options.slice() }));
-        }
+      for (const q of found.questions || []) {
+        if (!q) continue;
+        const key = String(q.question || '').trim().toLowerCase();
+        if (!key || seenText.has(key)) continue;
+        seenText.add(key);
+        mergedQuestions.push(Object.assign({}, q, {
+          id: generateId('q'),
+          options: Array.isArray(q.options) ? q.options.slice() : []
+        }));
       }
+    }
+    if (mergedQuestions.length === 0) {
+      showToast('Các bộ đề đã chọn không có câu hỏi nào để gộp.', 'warning');
+      return;
     }
     const newSet = {
       id: generateId('set'),
@@ -331,6 +338,18 @@ function openMergeModal() {
     persistSets();
     closeModal();
     showToast(`Đã tạo bộ đề tổng hợp với ${mergedQuestions.length} câu hỏi.`, 'success');
+    // Mở Kho bộ đề và bỏ bộ lọc để đề vừa gộp chắc chắn hiển thị trên màn hình
+    state.showLibrary = true;
+    state.homeFilter.search = '';
+    state.homeFilter.tag = 'ALL';
     navigate('home');
+    setTimeout(() => {
+      const card = document.querySelector(`[data-set-card="${newSet.id}"]`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('ring-2', 'ring-neutral-900', 'dark:ring-white');
+        setTimeout(() => card.classList.remove('ring-2', 'ring-neutral-900', 'dark:ring-white'), 2500);
+      }
+    }, 400);
   });
 }
