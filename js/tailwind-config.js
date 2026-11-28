@@ -1,4 +1,7 @@
-tailwind.config = {
+// Cấu hình dùng để biên dịch sẵn css/tailwind.min.css:
+// npx tailwindcss@3.4.17 -c js/tailwind-config.js -i css/styles.css -o css/tailwind.min.css --minify
+const tailwindConfig = {
+  content: ['./index.html', './js/**/*.js'],
   darkMode: 'class',
   theme: {
     extend: {
@@ -22,3 +25,4 @@ tailwind.config = {
     }
   }
 };
+if (typeof module !== 'undefined') module.exports = tailwindConfig;

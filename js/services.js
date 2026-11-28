@@ -20,9 +20,7 @@ async function extractTextFromFile(file) {
   }
 
   if (ext === 'docx') {
-    if (!window.mammoth) {
-      throw new Error('Thư viện đọc file DOCX chưa tải xong. Vui lòng thử lại sau vài giây.');
-    }
+    await ensureMammothJs();
     const arrayBuffer = await file.arrayBuffer();
     const result = await window.mammoth.extractRawText({ arrayBuffer });
     const text = (result.value || '').trim();
@@ -31,9 +29,7 @@ async function extractTextFromFile(file) {
   }
 
   if (ext === 'pdf') {
-    if (!window.pdfjsLib) {
-      throw new Error('Thư viện đọc file PDF chưa tải xong. Vui lòng thử lại sau vài giây.');
-    }
+    await ensurePdfJs();
     const arrayBuffer = await file.arrayBuffer();
     let pdf;
     try {

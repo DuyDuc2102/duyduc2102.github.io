@@ -6,51 +6,70 @@
   <title>ÔnThiPro — Ứng dụng Ôn tập Trắc nghiệm Thông minh</title>
   <link rel="icon" type="image/jpeg" href="assets/avatar.jpg" />
   <link rel="apple-touch-icon" href="assets/avatar.jpg" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/400.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/500.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/600.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/700.css" />
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <script src="js/tailwind-config.js"></script>
-  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+
+  <!-- Áp dụng sẵn chế độ Sáng/Tối ngay trước khi vẽ khung hình đầu tiên (tránh nháy trắng) -->
+  <script>
+    (function () {
+      try {
+        var raw = localStorage.getItem('onthipro_theme_v2_mono');
+        var theme = raw ? JSON.parse(raw) : 'dark';
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+      } catch (e) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+
+  <!-- Tải font không chặn hiển thị (non-render-blocking) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/400.css" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/500.css" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/600.css" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/700.css" media="print" onload="this.media='all'" />
+  <noscript>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/400.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/600.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/700.css" />
+  </noscript>
+
+  <!-- CSS tĩnh đã biên dịch sẵn (loại bỏ hoàn toàn 380KB Tailwind Play CDN + MutationObserver) -->
+  <link rel="stylesheet" href="css/tailwind.min.css" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
-<body class="bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 min-h-screen transition-colors duration-200">
-  <!-- Lớp hình nền tùy chỉnh toàn màn hình (Ảnh / Video ngắn) -->
+<body class="bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100 min-h-screen">
+  <!-- Lớp hình nền tùy chỉnh toàn màn hình (Ảnh / Video ngắn — tách lớp GPU riêng) -->
   <div id="custom-bg-layer" class="fixed inset-0 z-0 pointer-events-none overflow-hidden hidden" aria-hidden="true">
-    <img id="custom-bg-img" alt="" class="hidden w-full h-full object-cover scale-105 transition-[filter] duration-200" />
-    <video id="custom-bg-video" autoplay loop muted playsinline class="hidden w-full h-full object-cover scale-105 transition-[filter] duration-200"></video>
-    <div id="custom-bg-overlay" class="absolute inset-0 transition-colors duration-200"></div>
+    <img id="custom-bg-img" alt="" decoding="async" class="hidden w-full h-full object-cover" />
+    <video id="custom-bg-video" autoplay loop muted playsinline preload="metadata" class="hidden w-full h-full object-cover"></video>
+    <div id="custom-bg-overlay" class="absolute inset-0"></div>
   </div>
 
   <!-- Vùng chính của ứng dụng -->
   <div id="app-root" class="relative z-10 min-h-screen flex flex-col">
     <!-- Thanh điều hướng trên cùng (gọn, trắng đen) -->
-    <header class="sticky top-0 z-30 bg-white/90 dark:bg-neutral-950/90 backdrop-blur border-b border-neutral-200 dark:border-neutral-800">
-      <div class="max-w-3xl mx-auto px-4 h-13 py-2.5 flex items-center justify-between gap-2">
+    <header class="sticky top-0 z-30 bg-white/90 dark:bg-neutral-950/90 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-800">
+      <div class="max-w-3xl mx-auto px-4 py-2.5 flex items-center justify-between gap-2">
         <button id="btn-go-home" type="button" class="flex items-center gap-2 text-left group focus:outline-none">
-          <img src="assets/avatar.jpg" alt="Avatar ÔnThiPro" class="w-8 h-8 rounded-lg object-cover border border-neutral-200 dark:border-neutral-700 shrink-0" />
+          <img src="assets/avatar.jpg" alt="Avatar ÔnThiPro" width="32" height="32" decoding="async" class="w-8 h-8 rounded-lg object-cover border border-neutral-200 dark:border-neutral-700 shrink-0" />
           <span class="font-bold text-sm tracking-tight text-neutral-900 dark:text-white">ÔnThiPro</span>
         </button>
 
         <div class="flex items-center gap-1">
-          <button id="btn-open-bg" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition" title="Đổi hình nền (Ảnh hoặc Video ngắn)">
+          <button id="btn-open-bg" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors" title="Đổi hình nền (Ảnh hoặc Video ngắn)">
             <i data-lucide="image" class="w-3.5 h-3.5"></i>
             <span class="hidden sm:inline">Hình nền</span>
           </button>
-          <button id="btn-open-merge" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition" title="Gộp nhiều bộ đề">
+          <button id="btn-open-merge" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors" title="Gộp nhiều bộ đề">
             <i data-lucide="layers" class="w-3.5 h-3.5"></i>
             <span class="hidden sm:inline">Gộp đề</span>
           </button>
-          <button id="btn-open-settings" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition" title="Cài đặt AI & API">
+          <button id="btn-open-settings" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors" title="Cài đặt AI & API">
             <i data-lucide="settings" class="w-3.5 h-3.5"></i>
             <span class="hidden sm:inline">AI</span>
             <span id="api-status-dot" class="w-1.5 h-1.5 rounded-full bg-neutral-400"></span>
           </button>
-          <button id="btn-toggle-theme" type="button" class="p-1.5 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition" title="Chuyển chế độ sáng/tối" aria-label="Chuyển chế độ sáng tối">
+          <button id="btn-toggle-theme" type="button" class="p-1.5 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors" title="Chuyển chế độ sáng/tối" aria-label="Chuyển chế độ sáng tối">
             <i id="theme-icon" data-lucide="sun" class="w-4 h-4"></i>
           </button>
         </div>
@@ -79,16 +98,17 @@
   <!-- Vùng ẩn dùng riêng cho Xuất PDF / In ấn -->
   <div id="print-area" class="p-8 max-w-4xl mx-auto"></div>
 
-  <!-- Dữ liệu & Mô-đun ứng dụng (theo thứ tự phụ thuộc) -->
-  <script src="data/triet-hoc.js"></script>
-  <script src="js/state.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/services.js"></script>
-  <script src="js/modals.js"></script>
-  <script src="js/quiz-engine.js"></script>
-  <script src="js/views-home.js"></script>
-  <script src="js/views-study.js"></script>
-  <script src="js/background.js"></script>
-  <script src="js/main.js"></script>
+  <!-- Thư viện icon & Mô-đun ứng dụng (tải song song với defer, thực thi đúng thứ tự) -->
+  <script defer src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <script defer src="data/triet-hoc.js"></script>
+  <script defer src="js/state.js"></script>
+  <script defer src="js/utils.js"></script>
+  <script defer src="js/services.js"></script>
+  <script defer src="js/modals.js"></script>
+  <script defer src="js/quiz-engine.js"></script>
+  <script defer src="js/views-home.js"></script>
+  <script defer src="js/views-study.js"></script>
+  <script defer src="js/background.js"></script>
+  <script defer src="js/main.js"></script>
 </body>
 </html>

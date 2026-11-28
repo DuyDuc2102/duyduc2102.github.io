@@ -1,9 +1,42 @@
-/* Thiết lập chung và hiệu ứng mượt mà */
+/* Thiết lập chung và tối ưu kết xuất mượt mà */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* Hiệu ứng lật thẻ Flashcard 3D */
+/* Tắt toàn bộ transition tạm thời khi đổi giao diện Sáng/Tối để không giật lag */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* Tách lớp compositor riêng cho nền tùy chỉnh để cuộn trang không phải vẽ lại */
+#custom-bg-layer {
+  contain: strict;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+#custom-bg-img,
+#custom-bg-video {
+  transform: scale(1.05) translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Tối ưu danh sách dài: trình duyệt bỏ qua tính toán bố cục & vẽ cho thẻ nằm ngoài khung nhìn */
+.perf-auto-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 190px;
+}
+.perf-edit-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 290px;
+}
+#quiz-nav-grid {
+  contain: content;
+}
+
+/* Hiệu ứng lật thẻ Flashcard 3D mượt trên GPU */
 .flashcard-scene {
   perspective: 1200px;
 }
@@ -11,8 +44,12 @@ body {
   position: relative;
   width: 100%;
   min-height: 320px;
-  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
   transform-style: preserve-3d;
+  will-change: transform;
+}
+.flashcard-inner.no-flip-transition {
+  transition: none !important;
 }
 .flashcard-inner.is-flipped {
   transform: rotateY(180deg);
@@ -72,42 +109,40 @@ body {
   width: 38px;
   height: 22px;
   border-radius: 9999px;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.16s ease;
   cursor: pointer;
 }
 .mono-switch-thumb {
   width: 16px;
   height: 16px;
   border-radius: 9999px;
-  transition: transform 0.2s ease;
+  transition: transform 0.16s ease;
+  will-change: transform;
 }
 
-/* Lớp hình nền tùy chỉnh (ảnh hoặc video ngắn) */
+/* Lớp hình nền tùy chỉnh: dùng màu nền bán trong suốt nhẹ GPU thay vì lặp hàng chục lớp backdrop-filter */
 body.has-custom-bg {
   background-color: transparent !important;
 }
-body.has-custom-bg.bg-glass-cards #main-content section,
-body.has-custom-bg.bg-glass-cards #main-content .bg-white,
-body.has-custom-bg.bg-glass-cards #main-content .dark\:bg-neutral-900,
-body.has-custom-bg.bg-glass-cards #main-content .dark\:bg-neutral-900\/90 {
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+body.has-custom-bg.bg-glass-cards:not(.has-video-bg) #main-content > div > section {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
-body.has-custom-bg.bg-glass-cards:not(.dark) #main-content section {
-  background-color: rgba(255, 255, 255, 0.78) !important;
+html:not(.dark) body.has-custom-bg.bg-glass-cards #main-content section,
+html:not(.dark) body.has-custom-bg.bg-glass-cards #main-content article {
+  background-color: rgba(255, 255, 255, 0.85) !important;
 }
-html.dark body.has-custom-bg.bg-glass-cards #main-content section {
-  background-color: rgba(23, 23, 23, 0.74) !important;
+html.dark body.has-custom-bg.bg-glass-cards #main-content section,
+html.dark body.has-custom-bg.bg-glass-cards #main-content article {
+  background-color: rgba(23, 23, 23, 0.82) !important;
 }
 body.has-custom-bg header {
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 body.has-custom-bg footer {
-  background-color: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background-color: rgba(255, 255, 255, 0.75);
 }
 html.dark body.has-custom-bg footer {
-  background-color: rgba(10, 10, 10, 0.55);
+  background-color: rgba(10, 10, 10, 0.68);
 }

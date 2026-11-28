@@ -106,13 +106,14 @@ function applyCustomBackground(mediaSrc) {
     vidEl.classList.add('hidden');
     vidEl.removeAttribute('src');
     vidEl.load();
-    document.body.classList.remove('has-custom-bg', 'bg-glass-cards');
+    document.body.classList.remove('has-custom-bg', 'bg-glass-cards', 'has-video-bg');
     return;
   }
 
   layer.classList.remove('hidden');
   document.body.classList.add('has-custom-bg');
   document.body.classList.toggle('bg-glass-cards', !!bgConfig.cardGlass);
+  document.body.classList.toggle('has-video-bg', bgConfig.type === 'video');
 
   const blurPx = Math.max(0, Math.min(20, Number(bgConfig.blur) || 0));
   const dimAlpha = Math.max(0, Math.min(85, Number(bgConfig.dim) || 0)) / 100;
@@ -140,13 +141,27 @@ function applyCustomBackground(mediaSrc) {
     vidEl.playbackRate = Number(bgConfig.playbackRate) || 1;
     vidEl.style.filter = blurPx > 0 ? `blur(${blurPx}px)` : 'none';
     vidEl.classList.remove('hidden');
-    if (bgConfig.paused) {
+    if (bgConfig.paused || document.hidden || _bgModalPreviewActive) {
       vidEl.pause();
     } else {
       vidEl.play().catch(() => {});
     }
   }
 }
+
+let _bgModalPreviewActive = false;
+
+// Tự động tạm dừng video nền khi chuyển sang tab khác để tiết kiệm CPU/GPU
+document.addEventListener('visibilitychange', () => {
+  if (bgConfig.type !== 'video') return;
+  const vidEl = document.getElementById('custom-bg-video');
+  if (!vidEl) return;
+  if (document.hidden) {
+    vidEl.pause();
+  } else if (!bgConfig.paused && !_bgModalPreviewActive) {
+    vidEl.play().catch(() => {});
+  }
+});
 
 async function initCustomBackground() {
   if (bgConfig.type === 'none') {
@@ -289,6 +304,25 @@ function openBackgroundModal() {
   `;
 
   openModal('Tùy chỉnh hình nền (Ảnh / Video ngắn)', body, footer, 'max-w-lg');
+
+  // Tạm dừng video nền toàn màn hình khi đang mở khung xem trước để tránh giải mã 2 video cùng lúc
+  _bgModalPreviewActive = true;
+  const mainBgVideo = document.getElementById('custom-bg-video');
+  if (mainBgVideo && !mainBgVideo.paused) {
+    mainBgVideo.pause();
+  }
+  setModalCloseCleanup(() => {
+    _bgModalPreviewActive = false;
+    const previewV = document.getElementById('bg-preview-video');
+    if (previewV) {
+      previewV.pause();
+      previewV.removeAttribute('src');
+    }
+    if (bgConfig.type === 'video' && !bgConfig.paused && !document.hidden) {
+      const bgV = document.getElementById('custom-bg-video');
+      if (bgV) bgV.play().catch(() => {});
+    }
+  });
 
   const previewImg = document.getElementById('bg-preview-img');
   const previewVid = document.getElementById('bg-preview-video');
@@ -434,21 +468,29 @@ function openBackgroundModal() {
     showToast(`Đã áp dụng ${chosenType === 'video' ? 'video' : 'ảnh'} nền từ đường dẫn.`, 'success');
   });
 
+  let _sliderRaf = 0;
+  function scheduleBgSliderPaint() {
+    if (_sliderRaf) return;
+    _sliderRaf = requestAnimationFrame(() => {
+      _sliderRaf = 0;
+      applyCustomBackground();
+      syncPreviewUI();
+    });
+  }
+
   dimRange.addEventListener('input', () => {
     bgConfig.dim = parseInt(dimRange.value, 10) || 0;
     dimVal.textContent = bgConfig.dim + '%';
-    persistBgConfig();
-    applyCustomBackground();
-    syncPreviewUI();
+    scheduleBgSliderPaint();
   });
+  dimRange.addEventListener('change', persistBgConfig);
 
   blurRange.addEventListener('input', () => {
     bgConfig.blur = parseInt(blurRange.value, 10) || 0;
     blurVal.textContent = bgConfig.blur + 'px';
-    persistBgConfig();
-    applyCustomBackground();
-    syncPreviewUI();
+    scheduleBgSliderPaint();
   });
+  blurRange.addEventListener('change', persistBgConfig);
 
   glassToggle.addEventListener('change', () => {
     bgConfig.cardGlass = !!glassToggle.checked;
@@ -469,7 +511,7 @@ function openBackgroundModal() {
     applyCustomBackground();
     syncPreviewUI();
     togglePlayBtn.innerHTML = `<i data-lucide="${bgConfig.paused ? 'play' : 'pause'}" class="w-3.5 h-3.5"></i><span>${bgConfig.paused ? 'Phát video' : 'Tạm dừng'}</span>`;
-    refreshIcons();
+    refreshIcons(togglePlayBtn);
   });
 
   document.getElementById('btn-bg-reset').addEventListener('click', async () => {
@@ -491,5 +533,4 @@ function openBackgroundModal() {
   document.getElementById('btn-bg-done').addEventListener('click', closeModal);
 
   syncPreviewUI();
-  refreshIcons();
 }

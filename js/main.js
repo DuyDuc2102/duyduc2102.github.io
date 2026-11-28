@@ -1,13 +1,7 @@
 'use strict';
 
-// Cấu hình PDF.js worker
-if (window.pdfjsLib) {
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-}
-
 /* -----------------------------------------------------------------------
-   11. KHỞI CHẠY & SỰ KIỆN TOÀN CỤC
+   11. KHỞI CHẠY & SỰ KIỆN TOÀN CỤC (PHÍM TẮT O(1) KHÔNG DỰNG LẠI DOM)
    ----------------------------------------------------------------------- */
 document.getElementById('btn-go-home').addEventListener('click', () => navigate('home'));
 document.getElementById('btn-open-bg').addEventListener('click', openBackgroundModal);
@@ -21,43 +15,31 @@ document.getElementById('btn-toggle-theme').addEventListener('click', () => {
   if (state.view === 'result') renderApp();
 });
 
-// Phím tắt tiện lợi khi làm bài hoặc học Flashcard
+// Phím tắt phản hồi tức thì khi làm bài hoặc học Flashcard
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  const tag = e.target && e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   if (state.view === 'quiz' && state.quiz) {
-    const qz = state.quiz;
-    if (e.key === 'ArrowRight' && qz.currentIndex < qz.questions.length - 1) {
-      qz.currentIndex += 1;
-      renderApp();
-    } else if (e.key === 'ArrowLeft' && qz.currentIndex > 0) {
-      qz.currentIndex -= 1;
-      renderApp();
+    if (e.key === 'ArrowRight') {
+      quizGoToQuestion(state.quiz.currentIndex + 1);
+    } else if (e.key === 'ArrowLeft') {
+      quizGoToQuestion(state.quiz.currentIndex - 1);
     } else if (/^[1-5]$/.test(e.key)) {
-      const oi = parseInt(e.key, 10) - 1;
-      const curQ = qz.questions[qz.currentIndex];
-      if (curQ && oi < curQ.options.length && !(qz.mode === 'practice' && qz.answers[qz.currentIndex] !== undefined)) {
-        qz.answers[qz.currentIndex] = oi;
-        renderApp();
-      }
+      quizSelectOption(parseInt(e.key, 10) - 1);
     }
   } else if (state.view === 'flashcard' && state.flashcard) {
-    const fc = state.flashcard;
     if (e.code === 'Space') {
       e.preventDefault();
-      fc.flipped = !fc.flipped;
-      renderApp();
-    } else if (e.key === 'ArrowRight' && fc.index < fc.cards.length - 1) {
-      fc.index += 1;
-      fc.flipped = false;
-      renderApp();
-    } else if (e.key === 'ArrowLeft' && fc.index > 0) {
-      fc.index -= 1;
-      fc.flipped = false;
-      renderApp();
+      flashcardToggleFlip();
+    } else if (e.key === 'ArrowRight') {
+      flashcardGoTo(state.flashcard.index + 1);
+    } else if (e.key === 'ArrowLeft') {
+      flashcardGoTo(state.flashcard.index - 1);
     }
   }
 });
 
+refreshIcons(document.querySelector('header'));
 applyTheme();
 initCustomBackground();
 updateApiStatusDot();

@@ -14,6 +14,28 @@ const STORAGE_KEYS = {
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
+const BUILTIN_SET_IDS = new Set([
+  'builtin_triet_p1',
+  'builtin_triet_p2',
+  'builtin_triet_s200',
+  'builtin_triet_both'
+]);
+
+function serializeSetsForStorage(sets) {
+  if (!Array.isArray(sets)) return [];
+  return sets.map((s) => {
+    if (s && BUILTIN_SET_IDS.has(s.id) && !s.userModified) {
+      return {
+        id: s.id,
+        builtinStub: true,
+        builtinVersion: s.builtinVersion || BUILTIN_TRIET_VERSION,
+        createdAt: s.createdAt
+      };
+    }
+    return s;
+  });
+}
+
 function safeGetStorage(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -255,23 +277,40 @@ const state = {
   flashcard: null
 };
 
-// Đảm bảo 3 bộ đề Triết học (P1, P2, Cả 2) luôn có sẵn trong kho đề
+// Đảm bảo các bộ đề Triết học tích hợp luôn có sẵn mà không làm phình bộ nhớ localStorage (~680KB -> ~1KB)
 (function ensureBuiltinTrietSets() {
   const builtins = createBuiltinTrietSets();
-  let changed = false;
-  for (let i = builtins.length - 1; i >= 0; i--) {
-    const b = builtins[i];
-    const existingIdx = state.sets.findIndex((s) => s.id === b.id);
-    if (existingIdx === -1) {
-      state.sets.unshift(b);
-      changed = true;
-    } else if (state.sets[existingIdx].builtinVersion !== b.builtinVersion) {
-      state.sets[existingIdx] = b;
-      changed = true;
+  const builtinMap = new Map(builtins.map((b) => [b.id, b]));
+  let needsPersist = !Array.isArray(savedSets);
+
+  // Khôi phục các bản ghi rút gọn (stub) hoặc cập nhật phiên bản mới cho bộ đề mặc định chưa chỉnh sửa
+  for (let i = 0; i < state.sets.length; i++) {
+    const item = state.sets[i];
+    if (!item || !BUILTIN_SET_IDS.has(item.id)) continue;
+    const fresh = builtinMap.get(item.id);
+    if (!fresh) continue;
+
+    if (item.builtinStub) {
+      state.sets[i] = item.createdAt ? Object.assign({}, fresh, { createdAt: item.createdAt }) : fresh;
+      if (item.builtinVersion !== fresh.builtinVersion) needsPersist = true;
+    } else if (!item.userModified) {
+      // Nén dữ liệu cũ từng lưu đầy đủ trong localStorage sang dạng stub gọn nhẹ
+      state.sets[i] = fresh;
+      needsPersist = true;
     }
   }
-  if (!Array.isArray(savedSets) || changed) {
-    safeSetStorage(STORAGE_KEYS.SETS, state.sets);
+
+  for (let i = builtins.length - 1; i >= 0; i--) {
+    const b = builtins[i];
+    const existingIdx = state.sets.findIndex((s) => s && s.id === b.id);
+    if (existingIdx === -1) {
+      state.sets.unshift(b);
+      needsPersist = true;
+    }
+  }
+
+  if (needsPersist) {
+    safeSetStorage(STORAGE_KEYS.SETS, serializeSetsForStorage(state.sets));
   }
 })();
 

@@ -151,6 +151,7 @@ function startFlashcardSession(setObj) {
 function renderApp() {
   const main = document.getElementById('main-content');
   if (!main) return;
+  cleanupViewObservers();
   if (progressChartInstance) {
     progressChartInstance.destroy();
     progressChartInstance = null;
@@ -181,5 +182,5 @@ function renderApp() {
     default:
       renderHomeView(main);
   }
-  refreshIcons();
+  refreshIcons(main);
 }

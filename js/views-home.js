@@ -1,44 +1,88 @@
 'use strict';
 
-/* --- MÀN HÌNH 1: TRANG CHỦ (HOME — GỌN NHỎ TRẮNG ĐEN 3 BƯỚC) --- */
+/* --- BỘ ĐỆM TRUY VẤN NGUỒN CÂU HỎI & LỊCH SỬ LÀM BÀI --- */
+let _wrongPoolCache = { wrongRef: null, poolRef: null, result: [] };
+
 function getQuickSourceQuestions(sourceKey) {
-  const p1Set = state.sets.find((s) => s.id === 'builtin_triet_p1');
-  const p2Set = state.sets.find((s) => s.id === 'builtin_triet_p2');
-  const s200Set = state.sets.find((s) => s.id === 'builtin_triet_s200');
-  const bothSet = state.sets.find((s) => s.id === 'builtin_triet_both');
-  const allPool = bothSet ? bothSet.questions : [];
+  const sets = state.sets;
+  let p1Set = null;
+  let p2Set = null;
+  let s200Set = null;
+  let bothSet = null;
+  for (let i = 0; i < sets.length; i++) {
+    const s = sets[i];
+    if (s.id === 'builtin_triet_p1') p1Set = s;
+    else if (s.id === 'builtin_triet_p2') p2Set = s;
+    else if (s.id === 'builtin_triet_s200') s200Set = s;
+    else if (s.id === 'builtin_triet_both') bothSet = s;
+  }
+
   if (sourceKey === 'p1') return p1Set ? p1Set.questions : [];
   if (sourceKey === 'p2') return p2Set ? p2Set.questions : [];
   if (sourceKey === 's200') return s200Set ? s200Set.questions : [];
+
+  const allPool = bothSet ? bothSet.questions : [];
   if (sourceKey === 'both') return allPool;
+
   if (sourceKey === 'wrong') {
-    const wrongSet = new Set(state.wrongIds || []);
+    const wrongArr = state.wrongIds || [];
+    if (!wrongArr.length || !allPool.length) return [];
+    if (_wrongPoolCache.wrongRef === wrongArr && _wrongPoolCache.poolRef === allPool) {
+      return _wrongPoolCache.result;
+    }
+    const wrongSet = new Set(wrongArr);
     const seen = new Set();
     const out = [];
-    for (const q of allPool) {
+    for (let i = 0; i < allPool.length; i++) {
+      const q = allPool[i];
       const k = q.question.trim().toLowerCase();
       if (wrongSet.has(k) && !seen.has(k)) {
         seen.add(k);
         out.push(q);
       }
     }
+    _wrongPoolCache = { wrongRef: wrongArr, poolRef: allPool, result: out };
     return out;
   }
   return [];
 }
 
-function renderHomeView(container) {
-  const qc = state.quickConfig;
-  const p1Qs = getQuickSourceQuestions('p1');
-  const p2Qs = getQuickSourceQuestions('p2');
-  const s200Qs = getQuickSourceQuestions('s200');
-  const bothQs = getQuickSourceQuestions('both');
-  const wrongQs = getQuickSourceQuestions('wrong');
+let _historyStatsCache = { len: -1, lastId: null, map: new Map() };
+function getHistoryStatsMap() {
+  const hist = state.history || [];
+  const lastId = hist.length > 0 ? hist[hist.length - 1].id : null;
+  if (_historyStatsCache.len === hist.length && _historyStatsCache.lastId === lastId) {
+    return _historyStatsCache.map;
+  }
+  const map = new Map();
+  for (let i = 0; i < hist.length; i++) {
+    const h = hist[i];
+    const cur = map.get(h.setId);
+    if (!cur) {
+      map.set(h.setId, { attempts: 1, bestScore: h.score10 });
+    } else {
+      cur.attempts += 1;
+      if (h.score10 > cur.bestScore) cur.bestScore = h.score10;
+    }
+  }
+  _historyStatsCache = { len: hist.length, lastId, map };
+  return map;
+}
 
+/* --- MÀN HÌNH 1: TRANG CHỦ (HOME — CẬP NHẬT DOM CỤC BỘ SIÊU TỐC) --- */
+const HOME_SOURCE_LABELS = {
+  p1: 'Phần 1',
+  p2: 'Phần 2',
+  s200: 'S200 (theo sách)',
+  both: 'Tất cả',
+  wrong: 'Câu đã sai'
+};
+
+function computeHomeQuickMetrics() {
+  const qc = state.quickConfig;
   const activeQs = getQuickSourceQuestions(qc.source);
   const maxQ = activeQs.length;
 
-  // Đồng bộ khoảng câu hợp lệ
   if (maxQ === 0) {
     qc.rangeFrom = 0;
     qc.rangeTo = 0;
@@ -53,22 +97,18 @@ function renderHomeView(container) {
       ? rangeCount
       : Math.min(parseInt(qc.countOption, 10) || rangeCount, rangeCount);
 
-  const sourceLabels = {
-    p1: 'Phần 1',
-    p2: 'Phần 2',
-    s200: 'S200 (theo sách)',
-    both: 'Tất cả',
-    wrong: 'Câu đã sai'
-  };
   const modeLabel = qc.mode === 'exam' ? 'Thi thử' : 'Luyện tập';
   const summaryLine =
-    `${modeLabel} · ${sourceLabels[qc.source]} · ${effectiveCount} câu` +
+    `${modeLabel} · ${HOME_SOURCE_LABELS[qc.source]} · ${effectiveCount} câu` +
     (qc.mode === 'exam' ? ` · ${qc.examMinutes} phút` : '');
 
-  const allTags = [...new Set(state.sets.flatMap((s) => s.tags || []))].sort();
+  return { activeQs, maxQ, rangeCount, effectiveCount, summaryLine };
+}
+
+function getFilteredHomeSets() {
   const query = state.homeFilter.search.trim().toLowerCase();
   const activeTag = state.homeFilter.tag;
-  const filteredSets = state.sets.filter((s) => {
+  return state.sets.filter((s) => {
     const matchTag = activeTag === 'ALL' || (s.tags || []).includes(activeTag);
     const matchSearch =
       !query ||
@@ -76,6 +116,28 @@ function renderHomeView(container) {
       (s.tags || []).some((t) => t.toLowerCase().includes(query));
     return matchTag && matchSearch;
   });
+}
+
+function renderSetsGridHtml() {
+  const filteredSets = getFilteredHomeSets();
+  if (!filteredSets.length) {
+    return '<div class="col-span-full py-6 text-center text-xs text-neutral-500">Không tìm thấy bộ đề phù hợp.</div>';
+  }
+  const statsMap = getHistoryStatsMap();
+  return filteredSets.map((setObj) => renderSetCard(setObj, statsMap.get(setObj.id))).join('');
+}
+
+function renderHomeView(container) {
+  const qc = state.quickConfig;
+  const p1Qs = getQuickSourceQuestions('p1');
+  const p2Qs = getQuickSourceQuestions('p2');
+  const s200Qs = getQuickSourceQuestions('s200');
+  const bothQs = getQuickSourceQuestions('both');
+  const wrongQs = getQuickSourceQuestions('wrong');
+
+  const metrics = computeHomeQuickMetrics();
+  const allTags = [...new Set(state.sets.flatMap((s) => s.tags || []))].sort();
+  const activeTag = state.homeFilter.tag;
 
   const sourceCards = [
     { key: 'p1', title: 'Phần 1', desc: 'Bài tập hỏi đáp Phần 1', count: p1Qs.length },
@@ -104,7 +166,7 @@ function renderHomeView(container) {
             const selected = qc.source === c.key;
             const disabled = c.key === 'wrong' && c.count === 0;
             return `
-              <button type="button" data-source="${c.key}" ${disabled ? 'disabled' : ''} class="qc-source-btn relative text-left p-3.5 rounded-xl border transition flex flex-col justify-between min-h-[104px] ${
+              <button type="button" data-source="${c.key}" ${disabled ? 'disabled' : ''} class="qc-source-btn relative text-left p-3.5 rounded-xl border transition-colors flex flex-col justify-between min-h-[104px] ${
                 selected
                   ? 'border-neutral-900 dark:border-white bg-neutral-900/[0.04] dark:bg-white/[0.06] ring-1 ring-neutral-900 dark:ring-white'
                   : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-400 dark:hover:border-neutral-600 bg-transparent'
@@ -112,7 +174,7 @@ function renderHomeView(container) {
                 <div>
                   <div class="flex items-center justify-between gap-1">
                     <span class="font-semibold text-xs sm:text-sm text-neutral-900 dark:text-white">${c.title}</span>
-                    ${selected ? '<span class="w-2 h-2 rounded-full bg-neutral-900 dark:bg-white shrink-0"></span>' : ''}
+                    <span class="qc-source-dot w-2 h-2 rounded-full bg-neutral-900 dark:bg-white shrink-0 ${selected ? '' : 'hidden'}"></span>
                   </div>
                   <p class="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 leading-snug">${c.desc}</p>
                 </div>
@@ -132,7 +194,7 @@ function renderHomeView(container) {
           <h2 class="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Chọn chế độ</h2>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5" id="qc-mode-grid">
-          <button type="button" data-mode="practice" class="qc-mode-btn text-left p-3.5 rounded-xl border transition flex items-start gap-3 ${
+          <button type="button" data-mode="practice" class="qc-mode-btn text-left p-3.5 rounded-xl border transition-colors flex items-start gap-3 ${
             qc.mode === 'practice'
               ? 'border-neutral-900 dark:border-white bg-neutral-900/[0.04] dark:bg-white/[0.06] ring-1 ring-neutral-900 dark:ring-white'
               : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-400 dark:hover:border-neutral-600'
@@ -146,7 +208,7 @@ function renderHomeView(container) {
             </div>
           </button>
 
-          <button type="button" data-mode="exam" class="qc-mode-btn text-left p-3.5 rounded-xl border transition flex items-start gap-3 ${
+          <button type="button" data-mode="exam" class="qc-mode-btn text-left p-3.5 rounded-xl border transition-colors flex items-start gap-3 ${
             qc.mode === 'exam'
               ? 'border-neutral-900 dark:border-white bg-neutral-900/[0.04] dark:bg-white/[0.06] ring-1 ring-neutral-900 dark:ring-white'
               : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-400 dark:hover:border-neutral-600'
@@ -177,7 +239,7 @@ function renderHomeView(container) {
               const active = qc.countOption === opt;
               const label = opt === 'all' ? 'Tất cả' : opt;
               return `
-                <button type="button" data-count="${opt}" class="qc-count-btn px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                <button type="button" data-count="${opt}" class="qc-count-btn px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                   active
                     ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 border-neutral-900 dark:border-white'
                     : 'bg-transparent text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500'
@@ -190,48 +252,46 @@ function renderHomeView(container) {
         <!-- Khoảng câu -->
         <div>
           <div class="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-            Khoảng câu <span class="text-neutral-400 font-normal">(bộ này có câu ${maxQ > 0 ? '1 – ' + maxQ : '0'})</span>
+            Khoảng câu <span id="qc-range-hint" class="text-neutral-400 font-normal">(bộ này có câu ${metrics.maxQ > 0 ? '1 – ' + metrics.maxQ : '0'})</span>
           </div>
           <div class="flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
             <span>Từ câu</span>
-            <input id="qc-range-from" type="number" min="1" max="${Math.max(1, maxQ)}" value="${qc.rangeFrom}" class="w-20 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white text-xs text-center focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
+            <input id="qc-range-from" type="number" min="1" max="${Math.max(1, metrics.maxQ)}" value="${qc.rangeFrom}" class="w-20 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white text-xs text-center focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
             <span>đến câu</span>
-            <input id="qc-range-to" type="number" min="1" max="${Math.max(1, maxQ)}" value="${qc.rangeTo}" class="w-20 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white text-xs text-center focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
+            <input id="qc-range-to" type="number" min="1" max="${Math.max(1, metrics.maxQ)}" value="${qc.rangeTo}" class="w-20 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white text-xs text-center focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
           </div>
         </div>
 
-        <!-- Thời gian thi thử (hiển thị khi chọn chế độ Thi thử) -->
-        ${qc.mode === 'exam' ? `
-          <div class="pt-1 border-t border-neutral-100 dark:border-neutral-800">
-            <div class="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-2">Thời gian làm bài (phút)</div>
-            <div class="flex flex-wrap items-center gap-1.5">
-              ${[15, 30, 45, 60].map((m) => `
-                <button type="button" data-mins="${m}" class="qc-mins-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-                  qc.examMinutes === m
-                    ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 border-neutral-900 dark:border-white'
-                    : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:border-neutral-400'
-                }">${m} phút</button>
-              `).join('')}
-              <div class="flex items-center gap-1.5 ml-1">
-                <input id="qc-exam-mins" type="number" min="1" max="180" value="${qc.examMinutes}" class="w-16 px-2 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white text-xs text-center focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
-                <span class="text-xs text-neutral-500">phút</span>
-              </div>
+        <!-- Thời gian thi thử (ẩn/hiện tức thì không cần render lại trang) -->
+        <div id="qc-exam-time-section" class="pt-1 border-t border-neutral-100 dark:border-neutral-800 ${qc.mode === 'exam' ? '' : 'hidden'}">
+          <div class="text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-2">Thời gian làm bài (phút)</div>
+          <div class="flex flex-wrap items-center gap-1.5" id="qc-mins-group">
+            ${[15, 30, 45, 60].map((m) => `
+              <button type="button" data-mins="${m}" class="qc-mins-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                qc.examMinutes === m
+                  ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 border-neutral-900 dark:border-white'
+                  : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:border-neutral-400'
+              }">${m} phút</button>
+            `).join('')}
+            <div class="flex items-center gap-1.5 ml-1">
+              <input id="qc-exam-mins" type="number" min="1" max="180" value="${qc.examMinutes}" class="w-16 px-2 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white text-xs text-center focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
+              <span class="text-xs text-neutral-500">phút</span>
             </div>
           </div>
-        ` : ''}
+        </div>
 
         <!-- Công tắc trộn thứ tự câu hỏi & đáp án -->
         <div class="flex flex-wrap items-center gap-5 pt-1">
           <button type="button" id="qc-toggle-shuffle-q" role="switch" aria-checked="${qc.shuffleQ}" class="inline-flex items-center gap-2.5 text-xs font-medium text-neutral-700 dark:text-neutral-200 focus:outline-none">
-            <span class="mono-switch ${qc.shuffleQ ? 'bg-neutral-900 dark:bg-white' : 'bg-neutral-300 dark:bg-neutral-700'}">
-              <span class="mono-switch-thumb ${qc.shuffleQ ? 'bg-white dark:bg-neutral-950 translate-x-[19px]' : 'bg-white dark:bg-neutral-300 translate-x-[3px]'}"></span>
+            <span id="qc-switch-q-track" class="mono-switch ${qc.shuffleQ ? 'bg-neutral-900 dark:bg-white' : 'bg-neutral-300 dark:bg-neutral-700'}">
+              <span id="qc-switch-q-thumb" class="mono-switch-thumb ${qc.shuffleQ ? 'bg-white dark:bg-neutral-950 translate-x-[19px]' : 'bg-white dark:bg-neutral-300 translate-x-[3px]'}"></span>
             </span>
             <span>Trộn thứ tự câu hỏi</span>
           </button>
 
           <button type="button" id="qc-toggle-shuffle-a" role="switch" aria-checked="${qc.shuffleA}" class="inline-flex items-center gap-2.5 text-xs font-medium text-neutral-700 dark:text-neutral-200 focus:outline-none">
-            <span class="mono-switch ${qc.shuffleA ? 'bg-neutral-900 dark:bg-white' : 'bg-neutral-300 dark:bg-neutral-700'}">
-              <span class="mono-switch-thumb ${qc.shuffleA ? 'bg-white dark:bg-neutral-950 translate-x-[19px]' : 'bg-white dark:bg-neutral-300 translate-x-[3px]'}"></span>
+            <span id="qc-switch-a-track" class="mono-switch ${qc.shuffleA ? 'bg-neutral-900 dark:bg-white' : 'bg-neutral-300 dark:bg-neutral-700'}">
+              <span id="qc-switch-a-thumb" class="mono-switch-thumb ${qc.shuffleA ? 'bg-white dark:bg-neutral-950 translate-x-[19px]' : 'bg-white dark:bg-neutral-300 translate-x-[3px]'}"></span>
             </span>
             <span>Trộn thứ tự đáp án</span>
           </button>
@@ -240,29 +300,29 @@ function renderHomeView(container) {
 
       <!-- THANH HÀNH ĐỘNG BẮT ĐẦU -->
       <section class="bg-white dark:bg-neutral-900/90 rounded-2xl border border-neutral-200 dark:border-neutral-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-        <div class="text-xs sm:text-sm font-medium text-neutral-800 dark:text-neutral-200">${escapeHtml(summaryLine)}</div>
+        <div id="qc-summary-line" class="text-xs sm:text-sm font-medium text-neutral-800 dark:text-neutral-200">${escapeHtml(metrics.summaryLine)}</div>
         <div class="flex items-center gap-2">
-          <button type="button" id="btn-qc-flashcard" ${effectiveCount === 0 ? 'disabled' : ''} class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-medium text-neutral-700 dark:text-neutral-200 disabled:opacity-40 transition">
+          <button type="button" id="btn-qc-flashcard" ${metrics.effectiveCount === 0 ? 'disabled' : ''} class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-medium text-neutral-700 dark:text-neutral-200 disabled:opacity-40 transition-colors">
             <i data-lucide="layers-2" class="w-3.5 h-3.5"></i> Flashcard
           </button>
-          <button type="button" id="btn-qc-start" ${effectiveCount === 0 ? 'disabled' : ''} class="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-neutral-900 dark:bg-white hover:opacity-90 text-white dark:text-neutral-950 text-xs sm:text-sm font-semibold disabled:opacity-40 transition">
+          <button type="button" id="btn-qc-start" ${metrics.effectiveCount === 0 ? 'disabled' : ''} class="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-neutral-900 dark:bg-white hover:opacity-90 text-white dark:text-neutral-950 text-xs sm:text-sm font-semibold disabled:opacity-40 transition-opacity">
             Bắt đầu <i data-lucide="arrow-right" class="w-4 h-4"></i>
           </button>
         </div>
       </section>
 
-      <!-- KHU VỰC CÔNG CỤ MỞ RỘNG & KHO BỘ ĐỀ (THU GỌN ĐỂ TRANG NHỎ GỌN) -->
+      <!-- KHU VỰC CÔNG CỤ MỞ RỘNG & KHO BỘ ĐỀ -->
       <section class="pt-2">
         <div class="flex flex-wrap items-center justify-between gap-2 pb-2">
-          <button type="button" id="btn-toggle-library" class="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition">
+          <button type="button" id="btn-toggle-library" class="inline-flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white transition-colors">
             <i data-lucide="${state.showLibrary ? 'chevron-down' : 'chevron-right'}" class="w-4 h-4"></i>
             <span>Kho bộ đề & Công cụ tạo đề (${state.sets.length} bộ đề)</span>
           </button>
           <div class="flex items-center gap-1.5">
-            <button id="btn-hero-doc" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-400 dark:hover:border-neutral-600 text-[11px] font-medium text-neutral-700 dark:text-neutral-300 transition">
+            <button id="btn-hero-doc" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-400 dark:hover:border-neutral-600 text-[11px] font-medium text-neutral-700 dark:text-neutral-300 transition-colors">
               <i data-lucide="file-up" class="w-3.5 h-3.5"></i> Tạo đề từ tài liệu
             </button>
-            <button id="btn-hero-import" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-400 dark:hover:border-neutral-600 text-[11px] font-medium text-neutral-700 dark:text-neutral-300 transition">
+            <button id="btn-hero-import" type="button" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-400 dark:hover:border-neutral-600 text-[11px] font-medium text-neutral-700 dark:text-neutral-300 transition-colors">
               <i data-lucide="clipboard-paste" class="w-3.5 h-3.5"></i> Nhập bộ câu hỏi
             </button>
           </div>
@@ -275,23 +335,23 @@ function renderHomeView(container) {
                 <i data-lucide="search" class="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
                 <input id="home-search-input" type="text" value="${escapeHtml(state.homeFilter.search)}" placeholder="Tìm bộ đề..." class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
               </div>
-              <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition">
+              <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer transition-colors">
                 <i data-lucide="upload" class="w-3.5 h-3.5"></i> Nhập JSON
                 <input id="home-import-json" type="file" accept=".json" class="hidden" />
               </label>
             </div>
 
             ${allTags.length > 0 ? `
-              <div class="flex items-center gap-1.5 overflow-x-auto pb-1">
-                <button type="button" data-tag="ALL" class="tag-filter-btn shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition ${activeTag === 'ALL' ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950' : 'border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400'}">Tất cả</button>
+              <div class="flex items-center gap-1.5 overflow-x-auto pb-1" id="home-tag-bar">
+                <button type="button" data-tag="ALL" class="tag-filter-btn shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${activeTag === 'ALL' ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950' : 'border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400'}">Tất cả</button>
                 ${allTags.map((tag) => `
-                  <button type="button" data-tag="${escapeHtml(tag)}" class="tag-filter-btn shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition ${activeTag === tag ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950' : 'border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400'}">${escapeHtml(tag)}</button>
+                  <button type="button" data-tag="${escapeHtml(tag)}" class="tag-filter-btn shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${activeTag === tag ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950' : 'border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400'}">${escapeHtml(tag)}</button>
                 `).join('')}
               </div>
             ` : ''}
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="sets-grid">
-              ${filteredSets.map((setObj) => renderSetCard(setObj)).join('')}
+              ${renderSetsGridHtml()}
             </div>
           </div>
         ` : ''}
@@ -299,71 +359,168 @@ function renderHomeView(container) {
     </div>
   `;
 
-  // --- Sự kiện cho bảng cấu hình nhanh 3 bước ---
+  const rangeFromInput = document.getElementById('qc-range-from');
+  const rangeToInput = document.getElementById('qc-range-to');
+  const rangeHintEl = document.getElementById('qc-range-hint');
+  const summaryLineEl = document.getElementById('qc-summary-line');
+  const startBtn = document.getElementById('btn-qc-start');
+  const fcBtn = document.getElementById('btn-qc-flashcard');
+  const examTimeSection = document.getElementById('qc-exam-time-section');
+  const examMinsInput = document.getElementById('qc-exam-mins');
+
+  function syncHomeSummaryDOM() {
+    const m = computeHomeQuickMetrics();
+    rangeFromInput.max = String(Math.max(1, m.maxQ));
+    rangeToInput.max = String(Math.max(1, m.maxQ));
+    rangeFromInput.value = String(qc.rangeFrom);
+    rangeToInput.value = String(qc.rangeTo);
+    rangeHintEl.textContent = `(bộ này có câu ${m.maxQ > 0 ? '1 – ' + m.maxQ : '0'})`;
+    summaryLineEl.textContent = m.summaryLine;
+    startBtn.disabled = m.effectiveCount === 0;
+    fcBtn.disabled = m.effectiveCount === 0;
+    return m;
+  }
+
+  // --- Sự kiện cấu hình nhanh (Cập nhật tại chỗ, không tạo lại toàn bộ DOM) ---
   document.getElementById('qc-source-grid').addEventListener('click', (e) => {
     const btn = e.target.closest('.qc-source-btn');
     if (!btn || btn.disabled) return;
     const src = btn.getAttribute('data-source');
+    if (qc.source === src) return;
     qc.source = src;
     const qs = getQuickSourceQuestions(src);
     qc.rangeFrom = qs.length > 0 ? 1 : 0;
     qc.rangeTo = qs.length;
-    renderApp();
+
+    container.querySelectorAll('.qc-source-btn').forEach((b) => {
+      const active = b.getAttribute('data-source') === src;
+      b.classList.toggle('border-neutral-900', active);
+      b.classList.toggle('dark:border-white', active);
+      b.classList.toggle('bg-neutral-900/[0.04]', active);
+      b.classList.toggle('dark:bg-white/[0.06]', active);
+      b.classList.toggle('ring-1', active);
+      b.classList.toggle('ring-neutral-900', active);
+      b.classList.toggle('dark:ring-white', active);
+      b.classList.toggle('border-neutral-200', !active);
+      b.classList.toggle('dark:border-neutral-800', !active);
+      b.classList.toggle('hover:border-neutral-400', !active);
+      b.classList.toggle('dark:hover:border-neutral-600', !active);
+      b.classList.toggle('bg-transparent', !active);
+      const dot = b.querySelector('.qc-source-dot');
+      if (dot) dot.classList.toggle('hidden', !active);
+    });
+    syncHomeSummaryDOM();
   });
 
   document.getElementById('qc-mode-grid').addEventListener('click', (e) => {
     const btn = e.target.closest('.qc-mode-btn');
     if (!btn) return;
-    qc.mode = btn.getAttribute('data-mode');
-    renderApp();
+    const mode = btn.getAttribute('data-mode');
+    if (qc.mode === mode) return;
+    qc.mode = mode;
+
+    container.querySelectorAll('.qc-mode-btn').forEach((b) => {
+      const active = b.getAttribute('data-mode') === mode;
+      b.classList.toggle('border-neutral-900', active);
+      b.classList.toggle('dark:border-white', active);
+      b.classList.toggle('bg-neutral-900/[0.04]', active);
+      b.classList.toggle('dark:bg-white/[0.06]', active);
+      b.classList.toggle('ring-1', active);
+      b.classList.toggle('ring-neutral-900', active);
+      b.classList.toggle('dark:ring-white', active);
+      b.classList.toggle('border-neutral-200', !active);
+      b.classList.toggle('dark:border-neutral-800', !active);
+      b.classList.toggle('hover:border-neutral-400', !active);
+      b.classList.toggle('dark:hover:border-neutral-600', !active);
+    });
+    examTimeSection.classList.toggle('hidden', mode !== 'exam');
+    syncHomeSummaryDOM();
   });
 
   document.getElementById('qc-count-pills').addEventListener('click', (e) => {
     const btn = e.target.closest('.qc-count-btn');
     if (!btn) return;
-    qc.countOption = btn.getAttribute('data-count');
-    renderApp();
+    const val = btn.getAttribute('data-count');
+    if (qc.countOption === val) return;
+    qc.countOption = val;
+
+    container.querySelectorAll('.qc-count-btn').forEach((b) => {
+      const active = b.getAttribute('data-count') === val;
+      b.className = 'qc-count-btn px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ' + (
+        active
+          ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 border-neutral-900 dark:border-white'
+          : 'bg-transparent text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700 hover:border-neutral-400 dark:hover:border-neutral-500'
+      );
+    });
+    syncHomeSummaryDOM();
   });
 
-  document.getElementById('qc-range-from').addEventListener('change', (e) => {
+  rangeFromInput.addEventListener('change', (e) => {
+    const maxQ = getQuickSourceQuestions(qc.source).length;
     const val = parseInt(e.target.value, 10) || 1;
     qc.rangeFrom = Math.max(1, Math.min(Math.max(1, maxQ), val));
     if (qc.rangeTo < qc.rangeFrom) qc.rangeTo = qc.rangeFrom;
-    renderApp();
+    syncHomeSummaryDOM();
   });
 
-  document.getElementById('qc-range-to').addEventListener('change', (e) => {
+  rangeToInput.addEventListener('change', (e) => {
+    const maxQ = getQuickSourceQuestions(qc.source).length;
     const val = parseInt(e.target.value, 10) || maxQ;
     qc.rangeTo = Math.max(qc.rangeFrom, Math.min(Math.max(1, maxQ), val));
-    renderApp();
+    syncHomeSummaryDOM();
   });
 
-  document.querySelectorAll('.qc-mins-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      qc.examMinutes = parseInt(btn.getAttribute('data-mins'), 10) || 45;
-      renderApp();
+  function syncExamMinsButtons() {
+    container.querySelectorAll('.qc-mins-btn').forEach((b) => {
+      const m = parseInt(b.getAttribute('data-mins'), 10);
+      const active = qc.examMinutes === m;
+      b.className = 'qc-mins-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ' + (
+        active
+          ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 border-neutral-900 dark:border-white'
+          : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:border-neutral-400'
+      );
     });
+    if (examMinsInput) examMinsInput.value = String(qc.examMinutes);
+  }
+
+  document.getElementById('qc-mins-group').addEventListener('click', (e) => {
+    const btn = e.target.closest('.qc-mins-btn');
+    if (!btn) return;
+    qc.examMinutes = parseInt(btn.getAttribute('data-mins'), 10) || 45;
+    syncExamMinsButtons();
+    syncHomeSummaryDOM();
   });
 
-  const examMinsInput = document.getElementById('qc-exam-mins');
   if (examMinsInput) {
     examMinsInput.addEventListener('change', (e) => {
       qc.examMinutes = Math.max(1, Math.min(180, parseInt(e.target.value, 10) || 45));
-      renderApp();
+      syncExamMinsButtons();
+      syncHomeSummaryDOM();
     });
+  }
+
+  function syncMonoSwitch(btnId, trackId, thumbId, checked) {
+    const btn = document.getElementById(btnId);
+    const track = document.getElementById(trackId);
+    const thumb = document.getElementById(thumbId);
+    if (!btn || !track || !thumb) return;
+    btn.setAttribute('aria-checked', String(checked));
+    track.className = 'mono-switch ' + (checked ? 'bg-neutral-900 dark:bg-white' : 'bg-neutral-300 dark:bg-neutral-700');
+    thumb.className = 'mono-switch-thumb ' + (checked ? 'bg-white dark:bg-neutral-950 translate-x-[19px]' : 'bg-white dark:bg-neutral-300 translate-x-[3px]');
   }
 
   document.getElementById('qc-toggle-shuffle-q').addEventListener('click', () => {
     qc.shuffleQ = !qc.shuffleQ;
-    renderApp();
+    syncMonoSwitch('qc-toggle-shuffle-q', 'qc-switch-q-track', 'qc-switch-q-thumb', qc.shuffleQ);
   });
 
   document.getElementById('qc-toggle-shuffle-a').addEventListener('click', () => {
     qc.shuffleA = !qc.shuffleA;
-    renderApp();
+    syncMonoSwitch('qc-toggle-shuffle-a', 'qc-switch-a-track', 'qc-switch-a-thumb', qc.shuffleA);
   });
 
   function buildSelectedQuickQuestions() {
+    const activeQs = getQuickSourceQuestions(qc.source);
     const slice = activeQs.slice(Math.max(0, qc.rangeFrom - 1), qc.rangeTo);
     let list = qc.shuffleQ ? shuffleArray(slice) : slice.slice();
     if (qc.countOption !== 'all') {
@@ -373,7 +530,7 @@ function renderHomeView(container) {
     return list;
   }
 
-  document.getElementById('btn-qc-start').addEventListener('click', () => {
+  startBtn.addEventListener('click', () => {
     const picked = buildSelectedQuickQuestions();
     if (!picked.length) {
       showToast('Chưa có câu hỏi nào để bắt đầu.', 'warning');
@@ -387,24 +544,24 @@ function renderHomeView(container) {
       wrong: 'builtin_triet_wrong'
     };
     startQuizSession(
-      { id: setIdMap[qc.source], title: `Triết học Mác – Lênin · ${sourceLabels[qc.source]}`, questions: picked },
+      { id: setIdMap[qc.source], title: `Triết học Mác – Lênin · ${HOME_SOURCE_LABELS[qc.source]}`, questions: picked },
       {
         mode: qc.mode,
         timeLimitSec: qc.mode === 'exam' ? qc.examMinutes * 60 : 0,
-        shuffleQ: false, // Đã xử lý trộn ở buildSelectedQuickQuestions
+        shuffleQ: false,
         shuffleA: qc.shuffleA,
         customQuestions: picked,
-        customTitle: `Triết học Mác – Lênin · ${sourceLabels[qc.source]} (${picked.length} câu)`
+        customTitle: `Triết học Mác – Lênin · ${HOME_SOURCE_LABELS[qc.source]} (${picked.length} câu)`
       }
     );
   });
 
-  document.getElementById('btn-qc-flashcard').addEventListener('click', () => {
+  fcBtn.addEventListener('click', () => {
     const picked = buildSelectedQuickQuestions();
     if (!picked.length) return;
     startFlashcardSession({
       id: 'quick_fc_' + qc.source,
-      title: `Flashcard · ${sourceLabels[qc.source]} (${picked.length} câu)`,
+      title: `Flashcard · ${HOME_SOURCE_LABELS[qc.source]} (${picked.length} câu)`,
       questions: picked
     });
   });
@@ -424,26 +581,43 @@ function renderHomeView(container) {
     navigate('import-quiz');
   });
 
+  const grid = document.getElementById('sets-grid');
+  function refreshSetsGridOnly() {
+    if (!grid) return;
+    grid.innerHTML = renderSetsGridHtml();
+    refreshIcons(grid);
+  }
+
+  // Ô tìm kiếm cập nhật riêng lưới thẻ, giữ nguyên con trỏ & bộ gõ tiếng Việt (Telex/VNI)
   const searchInput = document.getElementById('home-search-input');
   if (searchInput) {
+    let searchTimer = 0;
     searchInput.addEventListener('input', (e) => {
       state.homeFilter.search = e.target.value;
-      renderHomeView(container);
-      refreshIcons();
-      const newInput = document.getElementById('home-search-input');
-      if (newInput) {
-        newInput.focus();
-        newInput.setSelectionRange(newInput.value.length, newInput.value.length);
-      }
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(refreshSetsGridOnly, 60);
     });
   }
 
-  document.querySelectorAll('.tag-filter-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.homeFilter.tag = btn.getAttribute('data-tag');
-      renderApp();
+  const tagBar = document.getElementById('home-tag-bar');
+  if (tagBar) {
+    tagBar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.tag-filter-btn');
+      if (!btn) return;
+      const tag = btn.getAttribute('data-tag');
+      if (state.homeFilter.tag === tag) return;
+      state.homeFilter.tag = tag;
+      tagBar.querySelectorAll('.tag-filter-btn').forEach((b) => {
+        const isAct = b.getAttribute('data-tag') === tag;
+        b.className = 'tag-filter-btn shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ' + (
+          isAct
+            ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950'
+            : 'border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400'
+        );
+      });
+      refreshSetsGridOnly();
     });
-  });
+  }
 
   const jsonInput = document.getElementById('home-import-json');
   if (jsonInput) {
@@ -486,7 +660,6 @@ function renderHomeView(container) {
     });
   }
 
-  const grid = document.getElementById('sets-grid');
   if (grid) {
     grid.addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-action]');
@@ -544,13 +717,12 @@ function renderHomeView(container) {
   }
 }
 
-function renderSetCard(setObj) {
-  const setHistory = state.history.filter((h) => h.setId === setObj.id);
-  const attempts = setHistory.length;
-  const bestScore = attempts > 0 ? Math.max(...setHistory.map((h) => h.score10)) : null;
+function renderSetCard(setObj, stats) {
+  const attempts = stats ? stats.attempts : 0;
+  const bestScore = stats ? stats.bestScore : null;
 
   return `
-    <article data-set-card="${escapeHtml(setObj.id)}" class="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 flex flex-col justify-between shadow-xs hover:shadow-md transition">
+    <article data-set-card="${escapeHtml(setObj.id)}" class="perf-auto-card bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
       <div>
         <div class="flex items-start justify-between gap-2 mb-2.5">
           <div class="flex flex-wrap gap-1.5">
@@ -570,31 +742,31 @@ function renderSetCard(setObj) {
 
       <div class="pt-3 border-t border-slate-100 dark:border-neutral-800 space-y-2">
         <div class="grid grid-cols-2 gap-2">
-          <button type="button" data-action="start" data-id="${escapeHtml(setObj.id)}" class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 text-sm font-semibold transition">
+          <button type="button" data-action="start" data-id="${escapeHtml(setObj.id)}" class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 text-sm font-semibold transition-colors">
             <i data-lucide="play" class="w-4 h-4"></i> Làm bài
           </button>
-          <button type="button" data-action="flashcard" data-id="${escapeHtml(setObj.id)}" class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium transition">
+          <button type="button" data-action="flashcard" data-id="${escapeHtml(setObj.id)}" class="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-medium transition-colors">
             <i data-lucide="layers-2" class="w-4 h-4"></i> Flashcard
           </button>
         </div>
         <div class="flex items-center justify-between pt-1">
           <div class="flex items-center gap-1">
-            <button type="button" data-action="edit" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Xem & chỉnh sửa câu hỏi">
+            <button type="button" data-action="edit" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Xem & chỉnh sửa câu hỏi">
               <i data-lucide="pencil" class="w-4 h-4"></i>
             </button>
-            <button type="button" data-action="duplicate" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Nhân đôi bộ đề">
+            <button type="button" data-action="duplicate" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Nhân đôi bộ đề">
               <i data-lucide="copy" class="w-4 h-4"></i>
             </button>
             ${setObj.sourceText ? `
-              <button type="button" data-action="add-more" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Tạo thêm câu hỏi mới từ cùng tài liệu">
+              <button type="button" data-action="add-more" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Tạo thêm câu hỏi mới từ cùng tài liệu">
                 <i data-lucide="sparkles" class="w-4 h-4"></i>
               </button>
             ` : ''}
-            <button type="button" data-action="export" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition" title="Xuất PDF / Word / JSON">
+            <button type="button" data-action="export" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Xuất PDF / Word / JSON">
               <i data-lucide="download" class="w-4 h-4"></i>
             </button>
           </div>
-          <button type="button" data-action="delete" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition" title="Xóa bộ đề">
+          <button type="button" data-action="delete" data-id="${escapeHtml(setObj.id)}" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors" title="Xóa bộ đề">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
         </div>
@@ -634,7 +806,7 @@ function renderCreateDocView(container) {
   container.innerHTML = `
     <div class="max-w-3xl mx-auto">
       <div class="flex items-center gap-3 mb-6">
-        <button type="button" id="btn-doc-back" class="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+        <button type="button" id="btn-doc-back" class="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
           <i data-lucide="arrow-left" class="w-5 h-5"></i>
         </button>
         <div>
@@ -650,12 +822,11 @@ function renderCreateDocView(container) {
         </div>
       ` : ''}
 
-      <div class="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 space-y-6 shadow-xs">
-        <!-- Khu vực tải tệp -->
+      <div class="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 space-y-6 shadow-sm">
         ${!isAddingMore ? `
           <div>
             <label class="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">1. Nguồn tài liệu</label>
-            <label id="doc-dropzone" class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 dark:border-neutral-700 rounded-2xl hover:border-brand-500 hover:bg-brand-50/30 dark:hover:bg-brand-900/10 cursor-pointer transition text-center">
+            <label id="doc-dropzone" class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 dark:border-neutral-700 rounded-2xl hover:border-brand-500 hover:bg-brand-50/30 dark:hover:bg-brand-900/10 cursor-pointer transition-colors text-center">
               <i data-lucide="upload-cloud" class="w-8 h-8 text-brand-500 mb-2"></i>
               <div class="text-sm font-medium text-slate-700 dark:text-slate-200">
                 ${d.fileName ? `Đã chọn: <span class="text-neutral-900 dark:text-white">${escapeHtml(d.fileName)}</span>` : 'Nhấn để chọn tệp hoặc kéo thả vào đây'}
@@ -666,7 +837,6 @@ function renderCreateDocView(container) {
           </div>
         ` : ''}
 
-        <!-- Ô dán / xem trước nội dung -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
             <label for="doc-text-input" class="text-sm font-medium text-slate-700 dark:text-slate-300">Hoặc dán / chỉnh sửa văn bản trực tiếp</label>
@@ -675,7 +845,6 @@ function renderCreateDocView(container) {
           <textarea id="doc-text-input" rows="6" placeholder="Dán nội dung bài giảng, tóm tắt chương hoặc ghi chú ôn tập vào đây..." class="w-full p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-slate-50 dark:bg-slate-800/60 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none">${escapeHtml(d.rawText)}</textarea>
         </div>
 
-        <!-- Thông tin bộ đề -->
         ${!isAddingMore ? `
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -689,7 +858,6 @@ function renderCreateDocView(container) {
           </div>
         ` : ''}
 
-        <!-- Tùy chọn cấu hình đề -->
         <div class="pt-2 border-t border-slate-100 dark:border-neutral-800 space-y-4">
           <div class="text-sm font-semibold text-slate-800 dark:text-slate-200">2. Tùy chọn tạo câu hỏi</div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -721,7 +889,6 @@ function renderCreateDocView(container) {
             </div>
           </div>
 
-          <!-- Chọn phạm vi trang / phần -->
           ${totalPages > 1 ? `
             <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-neutral-200 dark:border-neutral-700 space-y-3">
               <div class="flex flex-wrap items-center gap-4 text-sm">
@@ -743,7 +910,6 @@ function renderCreateDocView(container) {
           ` : ''}
         </div>
 
-        <!-- Thanh tiến độ khi đang tạo -->
         ${d.isGenerating ? `
           <div class="p-4 rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 space-y-2.5">
             <div class="flex items-center justify-between text-sm font-medium text-brand-800 dark:text-brand-200">
@@ -759,13 +925,12 @@ function renderCreateDocView(container) {
           </div>
         ` : ''}
 
-        <!-- Nút hành động -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
           <div class="text-xs text-slate-500 dark:text-slate-400">
             Đang dùng: <strong class="text-slate-700 dark:text-slate-200">${state.settings.provider === 'local' ? 'Chế độ tạo nhanh cục bộ' : state.settings.provider.toUpperCase() + ' API'}</strong>
             <button type="button" id="btn-doc-open-cfg" class="text-neutral-900 dark:text-white hover:underline ml-1">Đổi cài đặt</button>
           </div>
-          <button type="button" id="btn-doc-generate" ${d.isGenerating ? 'disabled' : ''} class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold text-sm shadow-sm transition">
+          <button type="button" id="btn-doc-generate" ${d.isGenerating ? 'disabled' : ''} class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-semibold text-sm shadow-sm transition-colors">
             <i data-lucide="sparkles" class="w-4 h-4"></i>
             ${d.isGenerating ? 'Đang tạo câu hỏi...' : (isAddingMore ? 'Tạo thêm câu hỏi' : 'Bắt đầu tạo đề')}
           </button>
@@ -774,7 +939,6 @@ function renderCreateDocView(container) {
     </div>
   `;
 
-  // Sự kiện màn hình Tạo đề từ tài liệu
   document.getElementById('btn-doc-back').addEventListener('click', () => navigate('home'));
   document.getElementById('btn-doc-open-cfg').addEventListener('click', openSettingsModal);
 
@@ -878,7 +1042,6 @@ async function runDocumentGeneration() {
   const d = state.docFlow;
   d.errorMsg = '';
 
-  // Lấy văn bản theo phạm vi đã chọn
   let workingText = d.rawText.trim();
   if (d.scopeType === 'range' && d.pages.length > 1) {
     const from = Math.max(1, Math.min(d.pages.length, d.rangeFrom));
@@ -907,7 +1070,7 @@ async function runDocumentGeneration() {
       d.progressPercent = 60;
       d.progressText = 'Đang tự động trích xuất câu hỏi cục bộ...';
       renderApp();
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 200));
       generatedQuestions = generateQuestionsLocally(workingText, totalWanted, d.optionCount, existingQs);
     } else {
       const chunks = splitTextIntoChunks(workingText, 5500);
@@ -945,6 +1108,7 @@ async function runDocumentGeneration() {
 
     if (targetSet) {
       targetSet.questions = targetSet.questions.concat(generatedQuestions);
+      if (BUILTIN_SET_IDS.has(targetSet.id)) targetSet.userModified = true;
       persistSets();
       showToast(`Đã bổ sung thêm ${generatedQuestions.length} câu hỏi mới vào bộ đề.`, 'success');
       state.editSetId = targetSet.id;
@@ -997,7 +1161,7 @@ function renderImportQuizView(container) {
     <div class="max-w-4xl mx-auto">
       <div class="flex items-center justify-between gap-3 mb-6">
         <div class="flex items-center gap-3">
-          <button type="button" id="btn-imp-back" class="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <button type="button" id="btn-imp-back" class="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <i data-lucide="arrow-left" class="w-5 h-5"></i>
           </button>
           <div>
@@ -1005,7 +1169,7 @@ function renderImportQuizView(container) {
             <p class="text-sm text-slate-500 dark:text-slate-400">Tự động nhận diện câu hỏi A/B/C/D, bảng đáp án ở cuối hoặc nhập tay từng câu.</p>
           </div>
         </div>
-        <button type="button" id="btn-imp-manual" class="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+        <button type="button" id="btn-imp-manual" class="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
           <i data-lucide="plus" class="w-4 h-4"></i> Nhập tay
         </button>
       </div>
@@ -1015,12 +1179,12 @@ function renderImportQuizView(container) {
       ` : ''}
 
       ${imp.step === 'input' ? `
-        <div class="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 space-y-5 shadow-xs">
+        <div class="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 sm:p-6 space-y-5 shadow-sm">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <label class="text-sm font-semibold text-slate-800 dark:text-slate-200">Dán đề trắc nghiệm hoặc tải tệp (.txt, .docx, .pdf)</label>
             <div class="flex items-center gap-2">
               <button type="button" id="btn-imp-sample" class="text-xs font-medium text-neutral-900 dark:text-white hover:underline">Điền mẫu thử</button>
-              <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+              <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                 <i data-lucide="file-up" class="w-3.5 h-3.5"></i> Tải tệp đề
                 <input id="imp-file-input" type="file" accept=".txt,.docx,.pdf" class="hidden" />
               </label>
@@ -1028,7 +1192,7 @@ function renderImportQuizView(container) {
           </div>
           <textarea id="imp-raw-text" rows="12" placeholder="Ví dụ:&#10;Câu 1: Thủ đô của Việt Nam là thành phố nào?&#10;A. TP. Hồ Chí Minh&#10;*B. Hà Nội&#10;C. Đà Nẵng&#10;D. Hải Phòng&#10;&#10;Hoặc để bảng đáp án ở cuối:&#10;Đáp án: 1B 2A 3D" class="w-full p-4 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-slate-50 dark:bg-slate-800/60 text-sm font-mono focus:ring-2 focus:ring-brand-500 focus:outline-none">${escapeHtml(imp.rawText)}</textarea>
           <div class="flex justify-end">
-            <button type="button" id="btn-imp-parse" class="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 font-semibold text-sm transition">
+            <button type="button" id="btn-imp-parse" class="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 font-semibold text-sm transition-colors">
               <i data-lucide="scan-text" class="w-4 h-4"></i> Nhận diện câu hỏi
             </button>
           </div>
@@ -1047,30 +1211,27 @@ function renderImportQuizView(container) {
               </div>
             </div>
             <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-neutral-800">
-              <div class="text-sm">
+              <div class="text-sm" id="imp-summary-status">
                 Đã nhận diện <strong>${imp.parsedQuestions.length}</strong> câu hỏi.
                 ${missingAnsCount > 0 ? `<span class="text-amber-600 dark:text-amber-400 font-medium ml-1">(${missingAnsCount} câu chưa có đáp án đúng)</span>` : '<span class="text-emerald-600 dark:text-emerald-400 font-medium ml-1">(Đủ đáp án)</span>'}
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 ${missingAnsCount > 0 ? `
-                  <button type="button" id="btn-imp-ai-solve" ${imp.isAiSolving ? 'disabled' : ''} class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition disabled:opacity-60">
+                  <button type="button" id="btn-imp-ai-solve" ${imp.isAiSolving ? 'disabled' : ''} class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition-colors disabled:opacity-60">
                     <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> ${imp.isAiSolving ? 'AI đang giải...' : 'AI đề xuất đáp án & giải thích'}
                   </button>
                 ` : ''}
-                <button type="button" id="btn-imp-add-q" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                <button type="button" id="btn-imp-add-q" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                   <i data-lucide="plus" class="w-3.5 h-3.5"></i> Thêm câu
                 </button>
-                <button type="button" id="btn-imp-save" class="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 text-sm font-semibold transition">
+                <button type="button" id="btn-imp-save" class="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 text-sm font-semibold transition-colors">
                   <i data-lucide="save" class="w-4 h-4"></i> Lưu bộ đề
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- Danh sách câu hỏi xem trước & chỉnh sửa -->
-          <div id="imp-q-list" class="space-y-4">
-            ${imp.parsedQuestions.map((q, idx) => renderEditableQuestionCard(q, idx, 'imp')).join('')}
-          </div>
+          <div id="imp-editor-mount"></div>
         </div>
       `}
     </div>
@@ -1159,16 +1320,25 @@ D. <url>
     document.getElementById('imp-title').addEventListener('input', (e) => { imp.title = e.target.value; });
     document.getElementById('imp-tags').addEventListener('input', (e) => { imp.tagsText = e.target.value; });
 
+    const editorApi = mountPaginatedQuestionEditor(
+      document.getElementById('imp-editor-mount'),
+      imp.parsedQuestions,
+      'imp',
+      () => {
+        const statusEl = document.getElementById('imp-summary-status');
+        if (statusEl) {
+          const miss = imp.parsedQuestions.filter((q) => q.correctIndex < 0).length;
+          statusEl.innerHTML =
+            `Đã nhận diện <strong>${imp.parsedQuestions.length}</strong> câu hỏi.` +
+            (miss > 0
+              ? `<span class="text-amber-600 dark:text-amber-400 font-medium ml-1">(${miss} câu chưa có đáp án đúng)</span>`
+              : '<span class="text-emerald-600 dark:text-emerald-400 font-medium ml-1">(Đủ đáp án)</span>');
+        }
+      }
+    );
+
     document.getElementById('btn-imp-add-q').addEventListener('click', () => {
-      imp.parsedQuestions.push({
-        id: generateId('q'),
-        question: '',
-        options: ['', '', '', ''],
-        correctIndex: 0,
-        explanation: '',
-        quote: ''
-      });
-      renderApp();
+      editorApi.addNewQuestion();
     });
 
     const aiSolveBtn = document.getElementById('btn-imp-ai-solve');
@@ -1238,20 +1408,20 @@ D. <url>
       showToast(`Đã lưu bộ đề với ${valid.length} câu hỏi.`, 'success');
       navigate('home');
     });
-
-    bindEditableQuestionEvents(document.getElementById('imp-q-list'), imp.parsedQuestions, () => renderApp());
   }
 }
 
-/* --- THÀNH PHẦN DÙNG CHUNG: THẺ CHỈNH SỬA TỪNG CÂU HỎI --- */
+/* --- THÀNH PHẦN CHỈNH SỬA CÂU HỎI PHÂN TRANG & TÌM KIẾM MƯỢT CHO BỘ ĐỀ LỚN --- */
+const EDITOR_PAGE_SIZE = 30;
+
 function renderEditableQuestionCard(q, idx, prefix) {
   return `
-    <div class="bg-white dark:bg-neutral-900 rounded-2xl border ${q.correctIndex < 0 ? 'border-amber-400 dark:border-amber-600' : 'border-neutral-200 dark:border-neutral-800'} p-5 space-y-3" data-q-idx="${idx}">
+    <div class="perf-edit-card bg-white dark:bg-neutral-900 rounded-2xl border ${q.correctIndex < 0 ? 'border-amber-400 dark:border-amber-600' : 'border-neutral-200 dark:border-neutral-800'} p-5 space-y-3" data-q-idx="${idx}">
       <div class="flex items-center justify-between gap-2">
-        <span class="text-xs font-bold uppercase tracking-wider text-neutral-900 dark:text-white">Câu ${idx + 1}</span>
+        <span class="q-card-label text-xs font-bold uppercase tracking-wider text-neutral-900 dark:text-white">Câu ${idx + 1}</span>
         <div class="flex items-center gap-2">
-          ${q.correctIndex < 0 ? '<span class="text-xs text-amber-600 dark:text-amber-400 font-medium">Chưa chọn đáp án đúng</span>' : ''}
-          <button type="button" class="q-del-btn p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition" title="Xóa câu này">
+          ${q.correctIndex < 0 ? '<span class="q-missing-badge text-xs text-amber-600 dark:text-amber-400 font-medium">Chưa chọn đáp án đúng</span>' : ''}
+          <button type="button" class="q-del-btn p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors" title="Xóa câu này">
             <i data-lucide="trash-2" class="w-4 h-4"></i>
           </button>
         </div>
@@ -1274,8 +1444,106 @@ function renderEditableQuestionCard(q, idx, prefix) {
   `;
 }
 
-function bindEditableQuestionEvents(listEl, questionsArray, onStructuralChange) {
-  if (!listEl) return;
+function mountPaginatedQuestionEditor(mountEl, questionsArray, prefix, onMutate) {
+  let page = 1;
+  let searchQuery = '';
+
+  mountEl.innerHTML = `
+    <div class="space-y-4">
+      <div id="${prefix}-toolbar" class="${questionsArray.length > EDITOR_PAGE_SIZE ? '' : 'hidden '}bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 p-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="relative flex-1 min-w-[200px]">
+          <i data-lucide="search" class="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <input id="${prefix}-q-search" type="text" placeholder="Tìm nội dung hoặc nhập số câu (VD: 120)..." class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 focus:outline-none focus:border-neutral-900 dark:focus:border-white" />
+        </div>
+        <div id="${prefix}-pager-top" class="flex items-center gap-1.5 text-xs"></div>
+      </div>
+      <div id="${prefix}-q-list" class="space-y-4"></div>
+      <div id="${prefix}-pager-bottom" class="flex items-center justify-center gap-2 pt-2"></div>
+    </div>
+  `;
+  refreshIcons(mountEl);
+
+  const toolbarEl = document.getElementById(`${prefix}-toolbar`);
+  const searchEl = document.getElementById(`${prefix}-q-search`);
+  const listEl = document.getElementById(`${prefix}-q-list`);
+  const pagerTop = document.getElementById(`${prefix}-pager-top`);
+  const pagerBottom = document.getElementById(`${prefix}-pager-bottom`);
+
+  function getFilteredIndices() {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) {
+      const all = new Array(questionsArray.length);
+      for (let i = 0; i < questionsArray.length; i++) all[i] = i;
+      return all;
+    }
+    const exactNum = /^\d+$/.test(q) ? parseInt(q, 10) : -1;
+    const indices = [];
+    for (let i = 0; i < questionsArray.length; i++) {
+      if (exactNum === i + 1) {
+        indices.push(i);
+        continue;
+      }
+      const item = questionsArray[i];
+      if (
+        (item.question && item.question.toLowerCase().includes(q)) ||
+        (item.options && item.options.some((o) => o.toLowerCase().includes(q)))
+      ) {
+        indices.push(i);
+      }
+    }
+    return indices;
+  }
+
+  function renderCurrentPage() {
+    toolbarEl.classList.toggle('hidden', questionsArray.length <= EDITOR_PAGE_SIZE && !searchQuery);
+    const indices = getFilteredIndices();
+    const totalPages = Math.max(1, Math.ceil(indices.length / EDITOR_PAGE_SIZE));
+    if (page > totalPages) page = totalPages;
+    if (page < 1) page = 1;
+
+    const start = (page - 1) * EDITOR_PAGE_SIZE;
+    const pageIndices = indices.slice(start, start + EDITOR_PAGE_SIZE);
+
+    if (pageIndices.length === 0) {
+      listEl.innerHTML = '<div class="p-6 text-center text-xs text-slate-500 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800">Không tìm thấy câu hỏi phù hợp.</div>';
+    } else {
+      listEl.innerHTML = pageIndices.map((idx) => renderEditableQuestionCard(questionsArray[idx], idx, prefix)).join('');
+      refreshIcons(listEl);
+    }
+
+    if (totalPages > 1) {
+      const pagerHtml = `
+        <button type="button" data-pg="prev" ${page <= 1 ? 'disabled' : ''} class="px-2.5 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 transition-colors">Trước</button>
+        <span class="px-2 text-neutral-600 dark:text-neutral-300 font-medium">Trang ${page}/${totalPages} (${indices.length} câu)</span>
+        <button type="button" data-pg="next" ${page >= totalPages ? 'disabled' : ''} class="px-2.5 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40 transition-colors">Sau</button>
+      `;
+      pagerTop.innerHTML = pagerHtml;
+      pagerBottom.innerHTML = pagerHtml;
+    } else {
+      pagerTop.innerHTML = indices.length ? `<span class="text-neutral-500">${indices.length} câu</span>` : '';
+      pagerBottom.innerHTML = '';
+    }
+  }
+
+  function handlePagerClick(e) {
+    const btn = e.target.closest('button[data-pg]');
+    if (!btn || btn.disabled) return;
+    const dir = btn.getAttribute('data-pg');
+    page += dir === 'next' ? 1 : -1;
+    renderCurrentPage();
+    listEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+  }
+  pagerTop.addEventListener('click', handlePagerClick);
+  pagerBottom.addEventListener('click', handlePagerClick);
+
+  let filterTimer = 0;
+  searchEl.addEventListener('input', (e) => {
+    searchQuery = e.target.value;
+    page = 1;
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(renderCurrentPage, 80);
+  });
+
   listEl.addEventListener('input', (e) => {
     const card = e.target.closest('[data-q-idx]');
     if (!card) return;
@@ -1288,6 +1556,7 @@ function bindEditableQuestionEvents(listEl, questionsArray, onStructuralChange) 
       q.options[oi] = e.target.value;
     } else if (e.target.classList.contains('q-exp-input')) q.explanation = e.target.value;
     else if (e.target.classList.contains('q-quote-input')) q.quote = e.target.value;
+    if (typeof onMutate === 'function') onMutate('edit');
   });
 
   listEl.addEventListener('change', (e) => {
@@ -1300,6 +1569,9 @@ function bindEditableQuestionEvents(listEl, questionsArray, onStructuralChange) 
       q.correctIndex = parseInt(e.target.value, 10);
       card.classList.remove('border-amber-400', 'dark:border-amber-600');
       card.classList.add('border-neutral-200', 'dark:border-neutral-800');
+      const badge = card.querySelector('.q-missing-badge');
+      if (badge) badge.remove();
+      if (typeof onMutate === 'function') onMutate('radio');
     }
   });
 
@@ -1309,8 +1581,35 @@ function bindEditableQuestionEvents(listEl, questionsArray, onStructuralChange) 
     const card = delBtn.closest('[data-q-idx]');
     const idx = parseInt(card.getAttribute('data-q-idx'), 10);
     questionsArray.splice(idx, 1);
-    if (typeof onStructuralChange === 'function') onStructuralChange();
+    renderCurrentPage();
+    if (typeof onMutate === 'function') onMutate('delete');
   });
+
+  renderCurrentPage();
+
+  return {
+    addNewQuestion() {
+      questionsArray.push({
+        id: generateId('q'),
+        question: '',
+        options: ['', '', '', ''],
+        correctIndex: 0,
+        explanation: '',
+        quote: ''
+      });
+      searchQuery = '';
+      if (searchEl) searchEl.value = '';
+      page = Math.max(1, Math.ceil(questionsArray.length / EDITOR_PAGE_SIZE));
+      renderCurrentPage();
+      if (typeof onMutate === 'function') onMutate('add');
+      const lastCard = listEl.lastElementChild;
+      if (lastCard) {
+        lastCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const ta = lastCard.querySelector('.q-text-input');
+        if (ta) ta.focus();
+      }
+    }
+  };
 }
 
 /* --- MÀN HÌNH 4: XEM & CHỈNH SỬA BỘ ĐỀ --- */
@@ -1321,11 +1620,17 @@ function renderEditSetView(container) {
     return;
   }
 
+  function markSetDirty() {
+    if (BUILTIN_SET_IDS.has(setObj.id)) {
+      setObj.userModified = true;
+    }
+  }
+
   container.innerHTML = `
     <div class="max-w-4xl mx-auto space-y-5">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-          <button type="button" id="btn-edit-back" class="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+          <button type="button" id="btn-edit-back" class="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <i data-lucide="arrow-left" class="w-5 h-5"></i>
           </button>
           <div>
@@ -1334,10 +1639,10 @@ function renderEditSetView(container) {
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <button type="button" id="btn-edit-play" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition">
+          <button type="button" id="btn-edit-play" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors">
             <i data-lucide="play" class="w-4 h-4"></i> Làm bài ngay
           </button>
-          <button type="button" id="btn-edit-save" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 text-sm font-semibold transition">
+          <button type="button" id="btn-edit-save" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-neutral-950 text-sm font-semibold transition-colors">
             <i data-lucide="save" class="w-4 h-4"></i> Lưu thay đổi
           </button>
         </div>
@@ -1355,25 +1660,41 @@ function renderEditSetView(container) {
       </div>
 
       <div class="flex items-center justify-between">
-        <h2 class="font-semibold text-slate-800 dark:text-slate-200">Danh sách câu hỏi (${setObj.questions.length})</h2>
-        <button type="button" id="btn-edit-add-q" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+        <h2 id="edit-q-heading" class="font-semibold text-slate-800 dark:text-slate-200">Danh sách câu hỏi (${setObj.questions.length})</h2>
+        <button type="button" id="btn-edit-add-q" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
           <i data-lucide="plus" class="w-4 h-4"></i> Thêm câu hỏi mới
         </button>
       </div>
 
-      <div id="edit-q-list" class="space-y-4">
-        ${setObj.questions.map((q, idx) => renderEditableQuestionCard(q, idx, 'edit')).join('')}
-      </div>
+      <div id="edit-editor-mount"></div>
     </div>
   `;
+
+  const headingEl = document.getElementById('edit-q-heading');
+  const editorApi = mountPaginatedQuestionEditor(
+    document.getElementById('edit-editor-mount'),
+    setObj.questions,
+    'edit',
+    (kind) => {
+      markSetDirty();
+      if (headingEl) headingEl.textContent = `Danh sách câu hỏi (${setObj.questions.length})`;
+      if (kind === 'delete' || kind === 'add') {
+        persistSets();
+      }
+    }
+  );
 
   document.getElementById('btn-edit-back').addEventListener('click', () => {
     persistSets();
     navigate('home');
   });
-  document.getElementById('edit-set-title').addEventListener('input', (e) => { setObj.title = e.target.value; });
+  document.getElementById('edit-set-title').addEventListener('input', (e) => {
+    setObj.title = e.target.value;
+    markSetDirty();
+  });
   document.getElementById('edit-set-tags').addEventListener('input', (e) => {
     setObj.tags = e.target.value.split(',').map((t) => t.trim()).filter(Boolean);
+    markSetDirty();
   });
   document.getElementById('btn-edit-save').addEventListener('click', () => {
     persistSets();
@@ -1384,19 +1705,6 @@ function renderEditSetView(container) {
     openStartQuizModal(setObj);
   });
   document.getElementById('btn-edit-add-q').addEventListener('click', () => {
-    setObj.questions.push({
-      id: generateId('q'),
-      question: '',
-      options: ['', '', '', ''],
-      correctIndex: 0,
-      explanation: '',
-      quote: ''
-    });
-    renderApp();
-  });
-
-  bindEditableQuestionEvents(document.getElementById('edit-q-list'), setObj.questions, () => {
-    persistSets();
-    renderApp();
+    editorApi.addNewQuestion();
   });
 }
